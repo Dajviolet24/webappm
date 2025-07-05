@@ -404,7 +404,6 @@ const MovieDetail = () => {
               }}
               title="Reproductor de Video"
               allowFullScreen
-              sandbox="allow-scripts allow-same-origin allow-presentation"
             />
           </div>
         </div>
