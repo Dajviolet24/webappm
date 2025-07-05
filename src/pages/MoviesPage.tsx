@@ -1,131 +1,133 @@
+"use client"
 
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import Header from '@/components/Header';
-import MovieCard from '@/components/MovieCard';
-import BottomNav from '@/components/BottomNav';
-import SearchOverlay from '@/components/SearchOverlay';
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { supabase } from "@/integrations/supabase/client"
+import Header from "../components/Header"
+import CategoryNav from "../components/CategoryNav"
+import ContentSection from "../components/ContentSection"
+import BottomNav from "../components/BottomNav"
+import SearchOverlay from "../components/SearchOverlay"
+import ResponsiveNav from "../components/ResponsiveNav"
 
 const MoviesPage = () => {
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('movies');
+  const [activeTab, setActiveTab] = useState("movies")
+  const [selectedCategory, setSelectedCategory] = useState("all")
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
 
-  // Fetch movies category
-  const { data: moviesCategory } = useQuery({
-    queryKey: ['movies-category'],
+  // Fetch categories
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('name', 'Movies')
-        .single();
-      
-      if (error) {
-        console.error('Error fetching movies category:', error);
-        return null;
-      }
-      
-      return data;
-    }
-  });
+      const { data, error } = await supabase.from("categories").select("*").order("name")
 
-  // Fetch movies
-  const { data: movies = [], isLoading } = useQuery({
-    queryKey: ['movies-page', moviesCategory?.id],
-    queryFn: async () => {
-      if (!moviesCategory?.id) return [];
-      
-      const { data, error } = await supabase
-        .from('movies')
-        .select('*')
-        .eq('category_id', moviesCategory.id)
-        .order('created_at', { ascending: false });
-      
       if (error) {
-        console.error('Error fetching movies:', error);
-        throw error;
+        console.error("Error fetching categories:", error)
+        return []
       }
-      
-      return data || [];
+
+      return data || []
     },
-    enabled: !!moviesCategory?.id
-  });
+  })
+
+  // Fetch movies based on selected category
+  const { data: movies = [], isLoading } = useQuery({
+    queryKey: ["movies", selectedCategory],
+    queryFn: async () => {
+      let query = supabase
+        .from("movies")
+        .select(`
+          *,
+          categories:category_id(id, name),
+          subcategories:subcategory_id(id, name)
+        `)
+        .eq("type", "movie")
+        .order("created_at", { ascending: false })
+
+      if (selectedCategory !== "all") {
+        query = query.eq("category_id", selectedCategory)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error("Error fetching movies:", error)
+        return []
+      }
+
+      return (
+        data?.map((movie) => ({
+          id: movie.id,
+          title: movie.title,
+          image: movie.image_url,
+          rating: movie.rating || 0,
+          duration: movie.duration || "N/A",
+          subcategory: movie.subcategories?.name || null,
+          category: movie.categories?.name || null,
+        })) || []
+      )
+    },
+  })
 
   const handleOpenSearch = () => {
-    setIsSearchOpen(true);
-  };
+    setIsSearchOpen(true)
+  }
 
   const handleCloseSearch = () => {
-    setIsSearchOpen(false);
-  };
-
-  const handleChangeTab = (tab: string) => {
-    setActiveTab(tab);
-    if (tab === 'search') {
-      setIsSearchOpen(true);
-    }
-  };
-
-  const allMoviesForSearch = movies.map((movie: any) => ({
-    id: movie.id,
-    title: movie.title,
-    image: movie.image_url,
-    rating: movie.rating || 0,
-    duration: movie.duration || 'N/A'
-  }));
+    setIsSearchOpen(false)
+  }
 
   return (
-    <div className="min-h-screen bg-movieDark text-white">
-      <Header 
-        onOpenSearch={handleOpenSearch}
-        onOpenMenu={() => {}}
-      />
-      
-      <main className="pt-24 pb-24 px-4">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold mb-8 text-center">Películas</h1>
-          
-          {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <p className="text-white/60 text-lg">Cargando películas...</p>
-            </div>
-          ) : movies.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {movies.map((movie: any) => (
-                <MovieCard
-                  key={movie.id}
-                  movie={{
-                    id: movie.id,
-                    title: movie.title,
-                    image: movie.image_url,
-                    rating: movie.rating || 0,
-                    duration: movie.duration || 'N/A'
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center py-20">
-              <p className="text-white/60 text-lg">No hay películas disponibles</p>
-            </div>
-          )}
+    <div className="unified-bg">
+      {/* Desktop Navigation */}
+      <div className="hidden lg:block">
+        <ResponsiveNav activeTab={activeTab} onChangeTab={setActiveTab} onOpenSearch={handleOpenSearch} />
+      </div>
+
+      {/* Main Content */}
+      <div className="lg:ml-64">
+        {/* Header */}
+        <div className="responsive-container">
+          <Header />
         </div>
-      </main>
-      
-      <BottomNav 
-        activeTab={activeTab}
-        onChangeTab={handleChangeTab}
-        onOpenSearch={handleOpenSearch}
-      />
 
-      <SearchOverlay 
-        isOpen={isSearchOpen}
-        onClose={handleCloseSearch}
-        allMovies={allMoviesForSearch}
-      />
+        {/* Page Title */}
+        <div className="responsive-container responsive-spacing">
+          <h1 className="responsive-title text-white mb-4 sm:mb-6">Películas</h1>
+          <p className="responsive-text text-white/70 mb-6 sm:mb-8">Descubre nuestra colección completa de películas</p>
+        </div>
+
+        {/* Category Navigation */}
+        <div className="responsive-container mb-6 sm:mb-8">
+          <CategoryNav
+            categories={[{ id: "all", name: "Todas" }, ...categories.map((cat) => ({ id: cat.id, name: cat.name }))]}
+            selectedCategory={selectedCategory}
+            onCategoryChange={setSelectedCategory}
+          />
+        </div>
+
+        {/* Movies Grid */}
+        <div className="responsive-container">
+          <ContentSection
+            movies={movies}
+            isLoading={isLoading}
+            emptyMessage="No se encontraron películas en esta categoría"
+          />
+        </div>
+
+        {/* Bottom spacing for mobile navigation */}
+        <div className="h-20 sm:h-24 lg:hidden"></div>
+      </div>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="lg:hidden">
+        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} onOpenSearch={handleOpenSearch} />
+      </div>
+
+      {/* Search Overlay */}
+      <SearchOverlay isOpen={isSearchOpen} onClose={handleCloseSearch} />
     </div>
-  );
-};
+  )
+}
 
-export default MoviesPage;
+export default MoviesPage
