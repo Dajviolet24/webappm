@@ -280,7 +280,7 @@ const Index = () => {
           )}
         </main>
         
-        <div className="min-h-screen text-white" style={{ backgroundColor: '#19223B' }}>
+        <div className="bg-gray-900 border-t border-white/10 pb-24">
           <div className="max-w-6xl mx-auto px-4 py-8">
             <div className="bg-gray-800/60 rounded-2xl border border-white/10 p-6 shadow-2xl backdrop-blur-md">
               <div className="text-center space-y-4">
