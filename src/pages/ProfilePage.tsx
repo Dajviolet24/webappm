@@ -1,270 +1,332 @@
+"use client"
 
-import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import Header from '@/components/Header';
-import BottomNav from '@/components/BottomNav';
-import SearchOverlay from '@/components/SearchOverlay';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { User, Settings, LogOut, Crown, Shield } from 'lucide-react';
-
-interface UserData {
-  id: string;
-  username: string;
-  avatar: string;
-  privacyAccepted: boolean;
-}
+import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
+import { User, Settings, Heart, Clock, LogOut, Edit, Camera, Star, Film } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { supabase } from "@/integrations/supabase/client"
+import BottomNav from "../components/BottomNav"
+import SearchOverlay from "../components/SearchOverlay"
+import ResponsiveNav from "../components/ResponsiveNav"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 
 const ProfilePage = () => {
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [userData, setUserData] = useState<UserData | null>(null);
+  const [activeTab, setActiveTab] = useState("profile")
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [userData, setUserData] = useState<any>(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    const savedUserData = localStorage.getItem('userData');
-    if (savedUserData) {
-      setUserData(JSON.parse(savedUserData));
+    const storedUserData = localStorage.getItem("userData")
+    if (storedUserData) {
+      setUserData(JSON.parse(storedUserData))
     }
-  }, []);
+  }, [])
 
-  // Fetch user statistics
-  const { data: userStats = { moviesWatched: 0, seriesFollowed: 0, totalHours: 0 } } = useQuery({
-    queryKey: ['user-stats', userData?.id],
+  // Fetch user's watch progress
+  const { data: watchProgress = [] } = useQuery({
+    queryKey: ["user-watch-progress", userData?.id],
     queryFn: async () => {
-      if (!userData?.id) return { moviesWatched: 0, seriesFollowed: 0, totalHours: 0 };
+      if (!userData?.id) return []
 
-      console.log('Fetching user stats for:', userData.id);
-
-      // Get total watch progress entries (completed movies/episodes)
-      const { data: watchProgress, error: watchError } = await supabase
-        .from('watch_progress')
+      const { data, error } = await supabase
+        .from("watch_progress")
         .select(`
           *,
-          movies:movie_id(type),
-          episodes:episode_id(id)
+          movies:movie_id(
+            id,
+            title,
+            image_url,
+            type,
+            duration
+          ),
+          episodes:episode_id(
+            id,
+            title,
+            episode_number,
+            season_number
+          )
         `)
-        .eq('user_id', userData.id);
+        .eq("user_id", userData.id)
+        .order("last_watched_at", { ascending: false })
+        .limit(10)
 
-      if (watchError) {
-        console.error('Error fetching watch progress:', watchError);
-        return { moviesWatched: 0, seriesFollowed: 0, totalHours: 0 };
+      if (error) {
+        console.error("Error fetching watch progress:", error)
+        return []
       }
 
-      console.log('Watch progress data:', watchProgress);
+      return data || []
+    },
+    enabled: !!userData?.id,
+  })
 
-      // Calculate statistics
-      const moviesWatched = watchProgress?.filter(item => 
-        item.movies?.type === 'movie' && item.progress_seconds > 300 // Watched more than 5 minutes
-      ).length || 0;
+  // Fetch user statistics
+  const { data: userStats } = useQuery({
+    queryKey: ["user-stats", userData?.id],
+    queryFn: async () => {
+      if (!userData?.id) return null
 
-      // Count unique series (by movie_id where episodes exist)
-      const seriesIds = new Set();
-      watchProgress?.forEach(item => {
-        if (item.episodes && item.movie_id) {
-          seriesIds.add(item.movie_id);
-        }
-      });
-      const seriesFollowed = seriesIds.size;
+      const { data: totalWatched, error: watchedError } = await supabase
+        .from("watch_progress")
+        .select("id")
+        .eq("user_id", userData.id)
 
-      // Calculate total watch time in hours
-      const totalSeconds = watchProgress?.reduce((total, item) => {
-        return total + (item.progress_seconds || 0);
-      }, 0) || 0;
-      const totalHours = Math.round(totalSeconds / 3600);
+      const { data: completedContent, error: completedError } = await supabase
+        .from("watch_progress")
+        .select("id")
+        .eq("user_id", userData.id)
+        .eq("completed", true)
+
+      if (watchedError || completedError) {
+        console.error("Error fetching user stats:", watchedError || completedError)
+        return null
+      }
 
       return {
-        moviesWatched,
-        seriesFollowed,
-        totalHours
-      };
+        totalWatched: totalWatched?.length || 0,
+        completedContent: completedContent?.length || 0,
+        hoursWatched: Math.floor((totalWatched?.length || 0) * 1.5), // Estimación
+      }
     },
-    enabled: !!userData?.id
-  });
-
-  const handleOpenSearch = () => {
-    setIsSearchOpen(true);
-  };
-
-  const handleCloseSearch = () => {
-    setIsSearchOpen(false);
-  };
-
-  const handleOpenMenu = () => {
-    setIsMenuOpen(true);
-  };
-
-  const handleChangeTab = (tab: string) => {
-    if (tab === 'search') {
-      setIsSearchOpen(true);
-    }
-  };
+    enabled: !!userData?.id,
+  })
 
   const handleLogout = () => {
-    localStorage.removeItem('accessAuth');
-    localStorage.removeItem('userData');
-    localStorage.removeItem('onboardingComplete');
-    window.location.reload();
-  };
+    localStorage.removeItem("userData")
+    localStorage.removeItem("accessKey")
+    navigate("/auth")
+  }
+
+  const handleOpenSearch = () => {
+    setIsSearchOpen(true)
+  }
+
+  const handleCloseSearch = () => {
+    setIsSearchOpen(false)
+  }
+
+  if (!userData) {
+    return (
+      <div className="unified-bg flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="responsive-subtitle text-white mb-4">Cargando perfil...</h2>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-movieBlue mx-auto"></div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <Header 
-        onOpenSearch={handleOpenSearch}
-        onOpenMenu={handleOpenMenu}
-      />
-      
-      <main className="pt-20 sm:pt-24 pb-20 px-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="text-center mb-6 sm:mb-8">
-            <h1 className="text-2xl sm:text-3xl font-bold mb-2 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-              Mi Perfil
-            </h1>
-            <p className="text-white/60 text-sm sm:text-base">Gestiona tu cuenta de Astronauta TV</p>
+    <div className="unified-bg">
+      {/* Desktop Navigation */}
+      <div className="hidden lg:block">
+        <ResponsiveNav activeTab={activeTab} onChangeTab={setActiveTab} onOpenSearch={handleOpenSearch} />
+      </div>
+
+      {/* Main Content */}
+      <div className="lg:ml-64">
+        <div className="responsive-container responsive-spacing">
+          {/* Profile Header */}
+          <div className="glass-card p-6 sm:p-8 mb-6 sm:mb-8">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+              <div className="relative">
+                <Avatar className="w-20 h-20 sm:w-24 sm:h-24 border-4 border-movieBlue/30">
+                  <AvatarImage src={userData.avatar_url || "/placeholder.svg"} alt={userData.username} />
+                  <AvatarFallback className="bg-movieBlue text-white text-xl sm:text-2xl font-bold">
+                    {userData.username?.charAt(0).toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <button className="absolute -bottom-2 -right-2 bg-movieBlue hover:bg-movieBlue/80 text-white p-2 rounded-full transition-colors">
+                  <Camera className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 text-center sm:text-left">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+                  <h1 className="responsive-subtitle text-white">{userData.username}</h1>
+                  <Badge
+                    variant="secondary"
+                    className="bg-movieBlue/20 text-movieBlue border-movieBlue/30 w-fit mx-auto sm:mx-0"
+                  >
+                    Usuario Premium
+                  </Badge>
+                </div>
+                <p className="responsive-text text-white/70 mb-4">
+                  Miembro desde{" "}
+                  {new Date(userData.created_at).toLocaleDateString("es-ES", {
+                    year: "numeric",
+                    month: "long",
+                  })}
+                </p>
+                <Button variant="outline" className="border-white/20 text-white hover:bg-white/10 bg-transparent">
+                  <Edit className="w-4 h-4 mr-2" />
+                  Editar Perfil
+                </Button>
+              </div>
+            </div>
           </div>
-          
-          {userData ? (
-            <div className="space-y-4 sm:space-y-6">
-              {/* User Profile Card */}
-              <Card className="bg-gray-800/80 backdrop-blur-lg border border-white/20 shadow-2xl">
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
-                    <div className="relative flex-shrink-0">
-                      <img
-                        src={userData.avatar}
-                        alt="Profile Avatar"
-                        className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full object-cover border-4 border-movieBlue/30 shadow-xl"
-                      />
-                      <div className="absolute -bottom-1 -right-1 bg-gradient-to-r from-movieBlue to-blue-600 p-1.5 sm:p-2 rounded-full shadow-lg">
-                        <Crown className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+            <Card className="glass-card border-white/10">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white flex items-center gap-2 text-sm sm:text-base">
+                  <Film className="w-5 h-5 text-movieBlue" />
+                  Contenido Visto
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl sm:text-3xl font-bold text-white mb-1">{userStats?.totalWatched || 0}</p>
+                <p className="text-xs sm:text-sm text-white/60">títulos en total</p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card border-white/10">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white flex items-center gap-2 text-sm sm:text-base">
+                  <Clock className="w-5 h-5 text-movieBlue" />
+                  Horas Vistas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl sm:text-3xl font-bold text-white mb-1">{userStats?.hoursWatched || 0}</p>
+                <p className="text-xs sm:text-sm text-white/60">horas de entretenimiento</p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card border-white/10 sm:col-span-2 lg:col-span-1">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white flex items-center gap-2 text-sm sm:text-base">
+                  <Star className="w-5 h-5 text-movieBlue" />
+                  Completados
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl sm:text-3xl font-bold text-white mb-1">{userStats?.completedContent || 0}</p>
+                <p className="text-xs sm:text-sm text-white/60">títulos terminados</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Continue Watching */}
+          {watchProgress.length > 0 && (
+            <Card className="glass-card border-white/10 mb-6 sm:mb-8">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-movieBlue" />
+                  Continuar Viendo
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {watchProgress.slice(0, 6).map((progress: any) => (
+                    <div
+                      key={progress.id}
+                      className="bg-white/5 rounded-lg p-4 hover:bg-white/10 transition-colors cursor-pointer"
+                      onClick={() =>
+                        navigate(
+                          `/movie/${progress.movie_id}${progress.episode_id ? `?episode=${progress.episode_id}` : ""}`,
+                        )
+                      }
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={progress.movies?.image_url || "/placeholder.svg?height=60&width=40"}
+                          alt={progress.movies?.title}
+                          className="w-10 h-15 object-cover rounded"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-white font-medium text-sm truncate">{progress.movies?.title}</h4>
+                          {progress.episodes && (
+                            <p className="text-white/60 text-xs">
+                              T{progress.episodes.season_number}E{progress.episodes.episode_number}:{" "}
+                              {progress.episodes.title}
+                            </p>
+                          )}
+                          <div className="w-full bg-white/20 rounded-full h-1.5 mt-2">
+                            <div
+                              className="bg-movieBlue h-1.5 rounded-full"
+                              style={{
+                                width: `${Math.min((progress.progress_seconds / progress.total_duration_seconds) * 100, 100)}%`,
+                              }}
+                            ></div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex-1 text-center sm:text-left">
-                      <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-white mb-1">{userData.username}</h2>
-                      <div className="flex items-center justify-center sm:justify-start gap-2 mb-2">
-                        <Shield className="w-4 h-4 text-green-400" />
-                        <span className="text-green-400 font-medium text-sm">Miembro Premium</span>
-                      </div>
-                      <p className="text-white/60 text-sm">Astronauta TV Member</p>
-                      <div className="flex items-center justify-center sm:justify-start gap-4 mt-3 text-xs text-white/50">
-                        <span>Cuenta verificada</span>
-                        <span>•</span>
-                        <span>Activo desde 2024</span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Account Statistics */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                <Card className="bg-blue-600/20 backdrop-blur-lg border border-blue-500/20 shadow-xl">
-                  <CardContent className="p-3 sm:p-4 text-center">
-                    <div className="text-xl sm:text-2xl font-bold text-blue-400 mb-1">{userStats.moviesWatched}</div>
-                    <div className="text-xs text-white/60">Películas vistas</div>
-                  </CardContent>
-                </Card>
-                <Card className="bg-purple-600/20 backdrop-blur-lg border border-purple-500/20 shadow-xl">
-                  <CardContent className="p-3 sm:p-4 text-center">
-                    <div className="text-xl sm:text-2xl font-bold text-purple-400 mb-1">{userStats.seriesFollowed}</div>
-                    <div className="text-xs text-white/60">Series seguidas</div>
-                  </CardContent>
-                </Card>
-                <Card className="bg-green-600/20 backdrop-blur-lg border border-green-500/20 shadow-xl">
-                  <CardContent className="p-3 sm:p-4 text-center">
-                    <div className="text-xl sm:text-2xl font-bold text-green-400 mb-1">{userStats.totalHours}h</div>
-                    <div className="text-xs text-white/60">Tiempo total</div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Account Settings */}
-              <Card className="bg-gray-800/80 backdrop-blur-lg border border-white/20 shadow-2xl">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-white text-lg">
-                    <Settings className="h-5 w-5 text-movieBlue" />
-                    Configuración de Cuenta
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
-                      <span className="text-white/80 text-sm">Nombre de Usuario</span>
-                      <span className="text-white font-medium text-sm">{userData.username}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
-                      <span className="text-white/80 text-sm">Política de Privacidad</span>
-                      <span className="text-green-400 font-medium flex items-center gap-1 text-sm">
-                        <Shield className="w-4 h-4" />
-                        Aceptada
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
-                      <span className="text-white/80 text-sm">Estado de la Cuenta</span>
-                      <span className="text-green-400 font-medium flex items-center gap-1 text-sm">
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        Activa
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
-                      <span className="text-white/80 text-sm">Plan de Suscripción</span>
-                      <span className="text-movieBlue font-medium flex items-center gap-1 text-sm">
-                        <Crown className="w-4 h-4" />
-                        Premium
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Actions */}
-              <Card className="bg-gray-800/80 backdrop-blur-lg border border-white/20 shadow-2xl">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-white text-lg">Acciones de Cuenta</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button 
-                    variant="outline" 
-                    className="w-full bg-white/5 border-white/20 text-white hover:bg-white/10 transition-all duration-300"
-                  >
-                    <Settings className="h-4 w-4 mr-2" />
-                    Configuraciones Avanzadas
-                  </Button>
-                  <Button 
-                    onClick={handleLogout}
-                    variant="destructive" 
-                    className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 border-0 shadow-lg transition-all duration-300"
-                  >
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Cerrar Sesión
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center py-20">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-movieBlue mx-auto mb-4"></div>
-                <p className="text-white/60 text-lg">Cargando perfil...</p>
-              </div>
-            </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
+
+          {/* Settings and Actions */}
+          <Card className="glass-card border-white/10">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-movieBlue" />
+                Configuración
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button variant="ghost" className="w-full justify-start text-white hover:bg-white/10 p-3 h-auto">
+                <User className="w-5 h-5 mr-3 text-movieBlue" />
+                <div className="text-left">
+                  <p className="font-medium">Información Personal</p>
+                  <p className="text-sm text-white/60">Actualiza tu información de perfil</p>
+                </div>
+              </Button>
+
+              <Button variant="ghost" className="w-full justify-start text-white hover:bg-white/10 p-3 h-auto">
+                <Heart className="w-5 h-5 mr-3 text-movieBlue" />
+                <div className="text-left">
+                  <p className="font-medium">Lista de Favoritos</p>
+                  <p className="text-sm text-white/60">Gestiona tu contenido favorito</p>
+                </div>
+              </Button>
+
+              <Button variant="ghost" className="w-full justify-start text-white hover:bg-white/10 p-3 h-auto">
+                <Settings className="w-5 h-5 mr-3 text-movieBlue" />
+                <div className="text-left">
+                  <p className="font-medium">Preferencias</p>
+                  <p className="text-sm text-white/60">Configura la aplicación a tu gusto</p>
+                </div>
+              </Button>
+
+              <hr className="border-white/10" />
+
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-red-400 hover:bg-red-500/10 p-3 h-auto"
+                onClick={handleLogout}
+              >
+                <LogOut className="w-5 h-5 mr-3" />
+                <div className="text-left">
+                  <p className="font-medium">Cerrar Sesión</p>
+                  <p className="text-sm text-red-400/60">Salir de tu cuenta</p>
+                </div>
+              </Button>
+            </CardContent>
+          </Card>
         </div>
-      </main>
-      
-      <BottomNav 
-        activeTab="profile"
-        onChangeTab={handleChangeTab}
-        onOpenSearch={handleOpenSearch}
-      />
 
-      <SearchOverlay 
-        isOpen={isSearchOpen}
-        onClose={handleCloseSearch}
-        allMovies={[]}
-      />
+        {/* Bottom spacing for mobile navigation */}
+        <div className="h-20 sm:h-24 lg:hidden"></div>
+      </div>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="lg:hidden">
+        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} onOpenSearch={handleOpenSearch} />
+      </div>
+
+      {/* Search Overlay */}
+      <SearchOverlay isOpen={isSearchOpen} onClose={handleCloseSearch} />
     </div>
-  );
-};
+  )
+}
 
-export default ProfilePage;
+export default ProfilePage
