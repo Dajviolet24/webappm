@@ -1,135 +1,131 @@
-"use client"
 
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { supabase } from "@/integrations/supabase/client"
-import Header from "../components/Header"
-import CategoryNav from "../components/CategoryNav"
-import ContentSection from "../components/ContentSection"
-import BottomNav from "../components/BottomNav"
-import SearchOverlay from "../components/SearchOverlay"
-import ResponsiveNav from "../components/ResponsiveNav"
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import Header from '@/components/Header';
+import MovieCard from '@/components/MovieCard';
+import BottomNav from '@/components/BottomNav';
+import SearchOverlay from '@/components/SearchOverlay';
 
 const SeriesPage = () => {
-  const [activeTab, setActiveTab] = useState("series")
-  const [selectedCategory, setSelectedCategory] = useState("all")
-  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('series');
 
-  // Fetch categories
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories"],
+  // Fetch series category
+  const { data: seriesCategory } = useQuery({
+    queryKey: ['series-category'],
     queryFn: async () => {
-      const { data, error } = await supabase.from("categories").select("*").order("name")
-
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('name', 'Series')
+        .single();
+      
       if (error) {
-        console.error("Error fetching categories:", error)
-        return []
+        console.error('Error fetching series category:', error);
+        return null;
       }
+      
+      return data;
+    }
+  });
 
-      return data || []
-    },
-  })
-
-  // Fetch series based on selected category
+  // Fetch series
   const { data: series = [], isLoading } = useQuery({
-    queryKey: ["series", selectedCategory],
+    queryKey: ['series-page', seriesCategory?.id],
     queryFn: async () => {
-      let query = supabase
-        .from("movies")
-        .select(`
-          *,
-          categories:category_id(id, name),
-          subcategories:subcategory_id(id, name)
-        `)
-        .eq("type", "series")
-        .order("created_at", { ascending: false })
-
-      if (selectedCategory !== "all") {
-        query = query.eq("category_id", selectedCategory)
-      }
-
-      const { data, error } = await query
-
+      if (!seriesCategory?.id) return [];
+      
+      const { data, error } = await supabase
+        .from('movies')
+        .select('*')
+        .eq('category_id', seriesCategory.id)
+        .order('created_at', { ascending: false });
+      
       if (error) {
-        console.error("Error fetching series:", error)
-        return []
+        console.error('Error fetching series:', error);
+        throw error;
       }
-
-      return (
-        data?.map((serie) => ({
-          id: serie.id,
-          title: serie.title,
-          image: serie.image_url,
-          rating: serie.rating || 0,
-          duration: serie.duration || "N/A",
-          subcategory: serie.subcategories?.name || null,
-          category: serie.categories?.name || null,
-        })) || []
-      )
+      
+      return data || [];
     },
-  })
+    enabled: !!seriesCategory?.id
+  });
 
   const handleOpenSearch = () => {
-    setIsSearchOpen(true)
-  }
+    setIsSearchOpen(true);
+  };
 
   const handleCloseSearch = () => {
-    setIsSearchOpen(false)
-  }
+    setIsSearchOpen(false);
+  };
+
+  const handleChangeTab = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === 'search') {
+      setIsSearchOpen(true);
+    }
+  };
+
+  const allSeriesForSearch = series.map((serie: any) => ({
+    id: serie.id,
+    title: serie.title,
+    image: serie.image_url,
+    rating: serie.rating || 0,
+    duration: serie.duration || 'N/A'
+  }));
 
   return (
-    <div className="unified-bg">
-      {/* Desktop Navigation */}
-      <div className="hidden lg:block">
-        <ResponsiveNav activeTab={activeTab} onChangeTab={setActiveTab} onOpenSearch={handleOpenSearch} />
-      </div>
-
-      {/* Main Content */}
-      <div className="lg:ml-64">
-        {/* Header */}
-        <div className="responsive-container">
-          <Header />
+    <div className="min-h-screen bg-movieDark text-white">
+      <Header 
+        onOpenSearch={handleOpenSearch}
+        onOpenMenu={() => {}}
+      />
+      
+      <main className="pt-24 pb-24 px-4">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl font-bold mb-8 text-center">Series</h1>
+          
+          {isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <p className="text-white/60 text-lg">Cargando series...</p>
+            </div>
+          ) : series.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              {series.map((serie: any) => (
+                <MovieCard
+                  key={serie.id}
+                  movie={{
+                    id: serie.id,
+                    title: serie.title,
+                    image: serie.image_url,
+                    rating: serie.rating || 0,
+                    duration: serie.duration || 'N/A'
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-20">
+              <p className="text-white/60 text-lg">No hay series disponibles</p>
+            </div>
+          )}
         </div>
+      </main>
+      
+      <BottomNav 
+        activeTab={activeTab}
+        onChangeTab={handleChangeTab}
+        onOpenSearch={handleOpenSearch}
+      />
 
-        {/* Page Title */}
-        <div className="responsive-container responsive-spacing">
-          <h1 className="responsive-title text-white mb-4 sm:mb-6">Series</h1>
-          <p className="responsive-text text-white/70 mb-6 sm:mb-8">
-            Explora nuestra colecci?n de series y temporadas completas
-          </p>
-        </div>
-
-        {/* Category Navigation */}
-        <div className="responsive-container mb-6 sm:mb-8">
-          <CategoryNav
-            categories={[{ id: "all", name: "Todas" }, ...categories.map((cat) => ({ id: cat.id, name: cat.name }))]}
-            selectedCategory={selectedCategory}
-            onCategoryChange={setSelectedCategory}
-          />
-        </div>
-
-        {/* Series Grid */}
-        <div className="responsive-container">
-          <ContentSection
-            movies={series}
-            isLoading={isLoading}
-            emptyMessage="No se encontraron series en esta categor?a"
-          />
-        </div>
-
-        {/* Bottom spacing for mobile navigation */}
-        <div className="h-20 sm:h-24 lg:hidden"></div>
-      </div>
-
-      {/* Mobile Bottom Navigation */}
-      <div className="lg:hidden">
-        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} onOpenSearch={handleOpenSearch} />
-      </div>
-
-      {/* Search Overlay */}
-      <SearchOverlay isOpen={isSearchOpen} onClose={handleCloseSearch} />
+      <SearchOverlay 
+        isOpen={isSearchOpen}
+        onClose={handleCloseSearch}
+        allMovies={allSeriesForSearch}
+      />
     </div>
-  )
-}
+  );
+};
 
-export default SeriesPage
+export default SeriesPage;
